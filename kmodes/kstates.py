@@ -1,9 +1,3 @@
-"""
-K-modes clustering for categorical data
-"""
-
-# pylint: disable=unused-argument,attribute-defined-outside-init
-
 from collections import defaultdict
 
 import numpy as np
@@ -163,25 +157,27 @@ def _k_modes_iter(X, centroids, cl_attr_freq, membship, dissim):
 
 def get_power_set_q(size):
     R = list(itertools.product([0,1], repeat=size))
-    print R
-    R2 = []
-    for i in R:
-        R2.append(list(i))
-    return R2
+    # R2 = []
+    # for i in R:
+    #     R2.append(list(i))
+    return R
 
 def get_improvement_centroid(X, n_clusters,max_iter, dissim, init, n_init, verbose, centroids, R):
     improvement_centroid = []
     improvement_discrepancy = 0
     first = True
-    R_reduced = []
-    for centroid in R:
-        if centroid not in centroids:
-            R_reduced.append(centroid)
+    n_clusters = n_clusters + 1
+    for centroid in centroids:
+        if R.__contains__(tuple(centroid)):
+            R.remove(tuple(centroid))
+    R_reduced = R
     for centroid in R_reduced:
-        n_clusters = n_clusters + 1
-        new_centroids = list(centroids)
-        new_centroids.append(centroid)
-        centroids, map, labels, cost, n_iter = k_modes_continued(X, n_clusters, max_iter, dissim, init, n_init, verbose, new_centroids)
+        centroid = list(centroid)
+        if(verbose == 2):
+            print ('testing centroid: ', centroid)
+        new_centroids = np.copy(centroids)
+        new_centroids = np.vstack((new_centroids, centroid))
+        centroids_results, map, labels, cost, n_iter = k_modes_continued(X, n_clusters, max_iter, dissim, init, n_init, 0, new_centroids)
         if first:
             improvement_discrepancy = cost
             improvement_centroid = centroid
@@ -189,12 +185,17 @@ def get_improvement_centroid(X, n_clusters,max_iter, dissim, init, n_init, verbo
         if cost<improvement_discrepancy:
             improvement_centroid = centroid
             improvement_discrepancy = cost
-
     return improvement_centroid
 
 
 def k_states(X, n_clusters=8, max_iter=100, dissim=matching_dissim, init='Cao', n_init=1, verbose=0):
+
     R = get_power_set_q(len(X[1]))
+    if (verbose == 2):
+        print 'created R'
+
+    unique = get_unique_rows(X)
+    n_unique = unique.shape[0]
     K_results = []
     K_maps = []
     K_labels = []
@@ -202,6 +203,9 @@ def k_states(X, n_clusters=8, max_iter=100, dissim=matching_dissim, init='Cao', 
     K_n_iters = []
     converged = False
     centroids, map, labels, cost, n_iter = k_modes(X, n_clusters,max_iter, dissim, init, n_init, verbose)
+    if (verbose >= 1):
+        print 'initial K created'
+
     K_results.append(centroids)
     K_maps.append(map)
     K_labels.append(labels)
@@ -209,9 +213,16 @@ def k_states(X, n_clusters=8, max_iter=100, dissim=matching_dissim, init='Cao', 
     K_n_iters.append(n_iter)
     if cost == 0:
         return K_results[0]
-    improvement_centroid = get_improvement_centroid(X, n_clusters,max_iter, dissim, init, n_init, verbose, centroids, R)
-    centroids.append(improvement_centroid)
+    improvement_centroid = get_improvement_centroid(X, n_clusters, max_iter, dissim, init, n_init, verbose, centroids, R)
+    centroids = np.vstack((centroids, improvement_centroid))
+    j=0
     while not converged:
+        j=j+1
+        if(j+4>=n_unique):
+            converged=True
+            break
+        if (verbose >= 1):
+            print ('iteration: ', j)
         n_clusters=n_clusters + 1
         centroids, map, labels, cost, n_iter = k_modes_continued(X, n_clusters,max_iter, dissim, init, n_init, verbose, centroids)
         K_results.append(centroids)
@@ -223,7 +234,7 @@ def k_states(X, n_clusters=8, max_iter=100, dissim=matching_dissim, init='Cao', 
             converged=True
             break
         improvement_centroid = get_improvement_centroid(X, n_clusters,max_iter, dissim, init, n_init, verbose, centroids, R)
-        centroids.append(improvement_centroid)
+        centroids = np.vstack((centroids, improvement_centroid))
 
     average_cost = K_costs[0]/len(K_costs)
     best_K = 0
@@ -451,9 +462,9 @@ def k_modes(X, n_clusters, max_iter, dissim, init, n_init, verbose):
         all_costs[best], all_n_iters[best]
 
 
-class KModes(BaseEstimator, ClusterMixin):
+class KStates(BaseEstimator, ClusterMixin):
 
-    """k-modes clustering algorithm for categorical data.
+    """k-states clustering algorithm for knowledge structures.
 
     Parameters
     -----------
@@ -535,7 +546,7 @@ class KModes(BaseEstimator, ClusterMixin):
         """
 
         self._enc_cluster_centroids, self._enc_map, self.labels_,\
-            self.cost_, self.n_iter_ = k_modes(X,
+            self.cost_, self.n_iter_ = k_states(X,
                                                self.n_clusters,
                                                self.max_iter,
                                                self.cat_dissim,
